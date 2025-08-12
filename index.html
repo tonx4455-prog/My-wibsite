@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="ar">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>متابعة الدودة للمؤشر — لعبة بسيطة</title>
+<style>
+  html,body { height:100%; margin:0; background:#000; }
+  canvas { display:block; width:100%; height:100%; }
+  .ui {
+    position: fixed;
+    left: 12px;
+    top: 12px;
+    color: #ddd;
+    font-family: system-ui, sans-serif;
+    background: rgba(0,0,0,0.4);
+    padding: 8px 10px;
+    border-radius: 8px;
+    font-size:14px;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="ui">حرك الماوس أو المس الشاشة</div>
+
+<script>
+(() => {
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+
+  function resize() {
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.floor(innerWidth * dpr);
+    canvas.height = Math.floor(innerHeight * dpr);
+    canvas.style.width = innerWidth + 'px';
+    canvas.style.height = innerHeight + 'px';
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+  }
+  addEventListener('resize', resize);
+  resize();
+
+  const SEGMENT_COUNT = 28;
+  const SEGMENT_LENGTH = 14;
+  const nodes = [];
+
+  for (let i = 0; i < SEGMENT_COUNT; i++) {
+    nodes.push({
+      x: innerWidth/2,
+      y: innerHeight/2 + i * SEGMENT_LENGTH,
+      size: Math.max(2, 10 - i * 0.28)
+    });
+  }
+
+  const target = { x: innerWidth/2, y: innerHeight/2 };
+
+  window.addEventListener('mousemove', (e) => {
+    target.x = e.clientX;
+    target.y = e.clientY;
+  });
+  window.addEventListener('touchmove', (e) => {
+    if (e.touches[0]) {
+      target.x = e.touches[0].clientX;
+      target.y = e.touches[0].clientY;
+    }
+    e.preventDefault();
+  }, { passive:false });
+
+  function normalize(dx, dy) {
+    const d = Math.hypot(dx, dy) || 1;
+    return { x: dx / d, y: dy / d, dist: d };
+  }
+
+  function updatePositions() {
+    const head = nodes[0];
+    const followSpeed = 0.18;
+    head.x += (target.x - head.x) * followSpeed;
+    head.y += (target.y - head.y) * followSpeed;
+
+    for (let i = 1; i < nodes.length; i++) {
+      const prev = nodes[i-1];
+      const cur = nodes[i];
+      const v = normalize(cur.x - prev.x, cur.y - prev.y);
+      cur.x = prev.x + v.x * SEGMENT_LENGTH;
+      cur.y = prev.y + v.y * SEGMENT_LENGTH;
+    }
+  }
+
+  function draw() {
+    ctx.clearRect(0,0,innerWidth, innerHeight);
+
+    ctx.save();
+    ctx.globalAlpha = 0.08;
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0,0,innerWidth, innerHeight);
+    ctx.restore();
+
+    for (let i = nodes.length-1; i >= 0; i--) {
+      const n = nodes[i];
+      const t = i / (nodes.length - 1);
+      const r = Math.floor(200 - t * 80);
+      ctx.fillStyle = `rgb(${r}, ${r}, ${r})`;
+      ctx.beginPath();
+      ctx.ellipse(n.x, n.y, n.size, n.size*1.1, 0, 0, Math.PI*2);
+      ctx.fill();
+    }
+
+    ctx.strokeStyle = 'rgba(180,180,180,0.7)';
+    ctx.lineWidth = 2;
+    for (let i = 2; i < nodes.length-2; i++) {
+      const a = nodes[i-1], b = nodes[i+1];
+      const dir = normalize(b.x - a.x, b.y - a.y);
+      const perp = { x: -dir.y, y: dir.x };
+      const len = 6 + (1 - (i / nodes.length)) * 8;
+      ctx.beginPath();
+      ctx.moveTo(nodes[i].x - perp.x * len, nodes[i].y - perp.y * len);
+      ctx.lineTo(nodes[i].x + perp.x * len, nodes[i].y + perp.y * len);
+      ctx.stroke();
+    }
+
+    ctx.strokeStyle = 'rgba(200,200,200,0.95)';
+    ctx.lineWidth = 1.6;
+    for (let i = 3; i < nodes.length; i += 2) {
+      const n = nodes[i];
+      const prev = nodes[Math.max(0, i-1)];
+      const next = nodes[Math.min(nodes.length-1, i+1)];
+      const dir = normalize(next.x - prev.x, next.y - prev.y);
+      const perp = { x: -dir.y, y: dir.x };
+
+      const legLen = 14 * (1 - i / nodes.length) + 4;
+      const branches = 4;
+      for (let b = 0; b < branches; b++) {
+        const f = b / branches;
+        const branchLen = legLen * (0.6 + 0.5 * (1 - f));
+        const sx = n.x + perp.x * (6 + f * 12);
+        const sy = n.y + perp.y * (6 + f * 12);
+        const ex = sx + perp.x * branchLen + dir.x * (3 + f*4);
+        const ey = sy + perp.y * branchLen + dir.y * (3 + f*4);
+
+        ctx.beginPath();
+        ctx.moveTo(n.x + perp.x * 6* (1 - f), n.y + perp.y * 6 * (1 - f));
+        ctx.lineTo(ex, ey);
+        ctx.stroke();
+      }
+
+      for (let b = 0; b < branches; b++) {
+        const f = b / branches;
+        const branchLen = legLen * (0.6 + 0.5 * (1 - f));
+        const sx = n.x - perp.x * (6 + f * 12);
+        const sy = n.y - perp.y * (6 + f * 12);
+        const ex = sx - perp.x * branchLen + dir.x * (3 + f*4);
+        const ey = sy - perp.y * branchLen + dir.y * (3 + f*4);
+
+        ctx.beginPath();
+        ctx.moveTo(n.x - perp.x * 6* (1 - f), n.y - perp.y * 6 * (1 - f));
+        ctx.lineTo(ex, ey);
+        ctx.stroke();
+      }
+    }
+
+    const head = nodes[0];
+    ctx.fillStyle = '#eee';
+    ctx.beginPath();
+    ctx.ellipse(head.x + 6, head.y - 4, 3.6, 4.2, 0, 0, Math.PI*2);
+    ctx.fill();
+    ctx.fillStyle = '#111';
+    ctx.beginPath();
+    ctx.ellipse(head.x + 7.2, head.y - 3.5, 1.4, 1.8, 0, 0, Math.PI*2);
+    ctx.fill();
+  }
+
+  function loop() {
+    updatePositions();
+    draw();
+    requestAnimationFrame(loop);
+  }
+  loop();
+
+  window.addEventListener('mousedown', () => {
+    nodes.forEach((n, i) => n.size *= 1.02);
+  });
+  window.addEventListener('mouseup', () => {
+    for (let i=0;i<nodes.length;i++) {
+      nodes[i].size = Math.max(2, 10 - i * 0.28);
+    }
+  });
+})();
+</script>
+</body>
+</html>
